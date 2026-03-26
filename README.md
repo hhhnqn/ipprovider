@@ -43,7 +43,7 @@ python -m ipprovider entrada.pdf -o salida.pdf
 
 - Las IPs se listan **sin duplicados**, en orden de **primera aparición** en el texto extraído.
 - **Privadas**, loopback, enlace local, etc.: se incluyen en la tabla con alcance descriptivo; no se consulta RDAP.
-- **Públicas**: se consulta RDAP vía la librería `ipwhois`. Hace falta **conectividad** a Internet; los fallos (límites, timeouts) aparecen en la columna de error del informe.
+- **Públicas**: se consulta RDAP vía la librería `ipwhois`. Hace falta **conectividad** a Internet; si la consulta falla, la fila puede quedar con campos RDAP vacíos (—).
 
 ## Pruebas
 

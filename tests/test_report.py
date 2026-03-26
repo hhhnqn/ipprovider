@@ -23,6 +23,10 @@ def test_report_creates_pdf_with_rows(tmp_path):
             asn="—",
             organization="—",
             network_cidr="—",
+            responsible="—",
+            postal_address="—",
+            country="—",
+            phone="—",
         ),
         IpReportRow(
             address="192.0.2.1",
@@ -32,6 +36,10 @@ def test_report_creates_pdf_with_rows(tmp_path):
             asn="64496",
             organization="Example Org",
             network_cidr="192.0.2.0/24",
+            responsible="Example Maintainer",
+            postal_address="Calle Demo 1, Ciudad",
+            country="ES",
+            phone="+34 900 111 222",
         ),
     ]
 
@@ -48,6 +56,9 @@ def test_report_creates_pdf_with_rows(tmp_path):
     text = "".join(page.extract_text() or "" for page in reader.pages)
     assert "192.168.1.1" in text
     assert "Example Org" in text
+    assert "Example Maintainer" in text
+    assert "Calle Demo 1" in text
+    assert "Teléfono" in text
 
 
 def test_report_empty(tmp_path):

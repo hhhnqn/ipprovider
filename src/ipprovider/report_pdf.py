@@ -2,16 +2,56 @@
 
 from __future__ import annotations
 
+import html
 from datetime import datetime
 from pathlib import Path
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.enums import TA_LEFT
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import Image as RLImage
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from ipprovider.enrichment import IpReportRow
+
+_LOGO_NAME = "report_logo.png"
+
+
+def _report_logo_path() -> Path | None:
+    p = Path(__file__).resolve().parent / "assets" / _LOGO_NAME
+    return p if p.is_file() else None
+
+
+def _logo_image(logo_path: Path, width: float) -> RLImage:
+    """Inserta el logo sin deformar (ancho y alto según píxeles del PNG)."""
+    reader = ImageReader(str(logo_path))
+    iw, ih = reader.getSize()
+    height = width * (ih / float(iw))
+    return RLImage(str(logo_path), width=width, height=height, hAlign="LEFT", mask="auto")
+
+# Pesos relativos por columna (suman 1.0); más ancho para texto largo.
+_COL_WEIGHTS_RAW = (
+    0.075,  # Dirección
+    0.038,  # Versión
+    0.055,  # Alcance
+    0.048,  # ASN
+    0.13,  # Organización / red
+    0.075,  # CIDR
+    0.11,  # Responsable
+    0.195,  # Domicilio
+    0.038,  # País
+    0.095,  # Teléfono
+)
+_s = sum(_COL_WEIGHTS_RAW)
+_COL_WEIGHTS = tuple(w / _s for w in _COL_WEIGHTS_RAW)
+
+
+def _cell_text(s: str) -> str:
+    t = html.escape(s or "", quote=False)
+    return t.replace("\n", "<br/>")
 
 
 def write_report_pdf(
@@ -22,73 +62,127 @@ def write_report_pdf(
     rows: list[IpReportRow],
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    page_size = landscape(A4)
+    left_m = 1.2 * cm
+    right_m = 1.2 * cm
+    top_m = 1.6 * cm
+    bottom_m = 1.6 * cm
+
     doc = SimpleDocTemplate(
         str(output_path),
-        pagesize=A4,
-        rightMargin=2 * cm,
-        leftMargin=2 * cm,
-        topMargin=2 * cm,
-        bottomMargin=2 * cm,
+        pagesize=page_size,
+        rightMargin=right_m,
+        leftMargin=left_m,
+        topMargin=top_m,
+        bottomMargin=bottom_m,
     )
+
+    usable_w = page_size[0] - left_m - right_m
+    col_widths = [usable_w * w for w in _COL_WEIGHTS]
+    drift = usable_w - sum(col_widths)
+    if col_widths:
+        col_widths[-1] += drift
+
     styles = getSampleStyleSheet()
+    cell_style = ParagraphStyle(
+        "tbl_cell",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=6.2,
+        leading=7.3,
+        alignment=TA_LEFT,
+        spaceBefore=0,
+        spaceAfter=0,
+        leftIndent=1,
+        rightIndent=1,
+    )
+    header_style = ParagraphStyle(
+        "tbl_head",
+        parent=cell_style,
+        fontName="Helvetica-Bold",
+        textColor=colors.whitesmoke,
+    )
+
     story: list = []
 
-    title = Paragraph(
-        "<b>Informe de direcciones IP</b>",
-        styles["Title"],
-    )
-    story.append(title)
-    story.append(Spacer(1, 0.5 * cm))
+    logo_path = _report_logo_path()
+    if logo_path is not None:
+        story.append(_logo_image(logo_path, width=2.3 * cm))
+        story.append(Spacer(1, 0.18 * cm))
 
-    meta = Paragraph(
-        f"Archivo origen: <i>{source_pdf}</i><br/>"
-        f"Generado (UTC): {generated_at.strftime('%Y-%m-%d %H:%M:%S')}<br/>"
-        f"Total de direcciones: {len(rows)}",
-        styles["Normal"],
+    story.append(
+        Paragraph(
+            "<b>Informe de direcciones IP</b>",
+            styles["Title"],
+        )
     )
-    story.append(meta)
-    story.append(Spacer(1, 0.6 * cm))
+    story.append(Spacer(1, 0.35 * cm))
+
+    story.append(
+        Paragraph(
+            f"Archivo origen: <i>{html.escape(str(source_pdf), quote=False)}</i><br/>"
+            f"Generado (UTC): {generated_at.strftime('%Y-%m-%d %H:%M:%S')}<br/>"
+            f"Total de direcciones: {len(rows)}",
+            styles["Normal"],
+        )
+    )
+    story.append(Spacer(1, 0.45 * cm))
 
     if not rows:
         story.append(Paragraph("No se encontraron direcciones IP.", styles["Normal"]))
         doc.build(story)
         return
 
-    table_data: list[list[str]] = [
-        [
-            "Dirección",
-            "Versión",
-            "Alcance",
-            "ASN",
-            "Organización / red",
-            "CIDR",
-            "Error RDAP",
-        ],
+    headers = [
+        "Dirección",
+        "Versión",
+        "Alcance",
+        "ASN",
+        "Organización / red",
+        "CIDR",
+        "Responsable",
+        "Domicilio",
+        "País",
+        "Teléfono",
     ]
+    table_data: list[list[Paragraph]] = [
+        [Paragraph(_cell_text(h), header_style) for h in headers],
+    ]
+
     for r in rows:
-        err = r.error or ""
         table_data.append(
             [
-                r.address,
-                r.ip_version,
-                r.scope,
-                r.asn,
-                r.organization,
-                r.network_cidr,
-                err,
+                Paragraph(_cell_text(r.address), cell_style),
+                Paragraph(_cell_text(r.ip_version), cell_style),
+                Paragraph(_cell_text(r.scope), cell_style),
+                Paragraph(_cell_text(r.asn), cell_style),
+                Paragraph(_cell_text(r.organization), cell_style),
+                Paragraph(_cell_text(r.network_cidr), cell_style),
+                Paragraph(_cell_text(r.responsible), cell_style),
+                Paragraph(_cell_text(r.postal_address), cell_style),
+                Paragraph(_cell_text(r.country), cell_style),
+                Paragraph(_cell_text(r.phone), cell_style),
             ]
         )
 
-    tbl = Table(table_data, repeatRows=1, hAlign="LEFT")
+    tbl = Table(
+        table_data,
+        colWidths=col_widths,
+        repeatRows=1,
+        hAlign="LEFT",
+        splitByRow=1,
+    )
     tbl.setStyle(
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 8),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("GRID", (0, 0), (-1, -1), 0.2, colors.grey),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F2F2F2")]),
             ]
         )
