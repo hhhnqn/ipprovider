@@ -9,10 +9,11 @@ from typing import Iterator
 
 _HEX = frozenset(string.hexdigits)
 
-# IPv4 estándar
+# IPv4: sin \b inicial porque en PDFs suele aparecer pegado a texto ("Ip181.27.0.1").
+# (?<![0-9]) evita tomar octetos dentro de números más largos; (?![0-9]) acota el último octeto.
 _IPV4_RE = re.compile(
-    r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}"
-    r"(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b"
+    r"(?<![0-9])(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}"
+    r"(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?![0-9])"
 )
 
 _CHUNK_RE = re.compile(r"^[0-9A-Fa-f:.]+$")

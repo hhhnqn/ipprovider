@@ -9,6 +9,12 @@ def test_ipv4_basic():
     assert ips == ["203.0.113.10", "192.168.1.1"]
 
 
+def test_ipv4_glued_to_letters():
+    """Algunos PDF unen la IP al texto previo (p. ej. Ip181.27.224.47)."""
+    t = "on Ip181.27.224.47\nAccount End"
+    assert find_ips_in_text(t) == ["181.27.224.47"]
+
+
 def test_ipv4_dedupe_order():
     t = "A 10.0.0.1 B 10.0.0.1 C 198.51.100.2"
     assert find_ips_in_text(t) == ["10.0.0.1", "198.51.100.2"]

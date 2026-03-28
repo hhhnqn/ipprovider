@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 from ipprovider.enrichment import enrich_ips
@@ -57,12 +56,10 @@ def main(argv: list[str] | None = None) -> int:
     if out is None:
         out = Path.cwd() / "informe_ips.pdf"
 
-    generated_at = datetime.now(timezone.utc)
     try:
         write_report_pdf(
             output_path=out,
             source_pdf=pdf_path,
-            generated_at=generated_at,
             rows=rows,
         )
     except Exception as e:

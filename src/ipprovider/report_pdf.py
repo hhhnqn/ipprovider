@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import html
-from datetime import datetime
 from pathlib import Path
 
 from reportlab.lib import colors
@@ -11,26 +10,9 @@ from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
-from reportlab.lib.utils import ImageReader
-from reportlab.platypus import Image as RLImage
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from ipprovider.enrichment import IpReportRow
-
-_LOGO_NAME = "report_logo.png"
-
-
-def _report_logo_path() -> Path | None:
-    p = Path(__file__).resolve().parent / "assets" / _LOGO_NAME
-    return p if p.is_file() else None
-
-
-def _logo_image(logo_path: Path, width: float) -> RLImage:
-    """Inserta el logo sin deformar (ancho y alto según píxeles del PNG)."""
-    reader = ImageReader(str(logo_path))
-    iw, ih = reader.getSize()
-    height = width * (ih / float(iw))
-    return RLImage(str(logo_path), width=width, height=height, hAlign="LEFT", mask="auto")
 
 # Pesos relativos por columna (suman 1.0); más ancho para texto largo.
 _COL_WEIGHTS_RAW = (
@@ -58,7 +40,6 @@ def write_report_pdf(
     *,
     output_path: Path,
     source_pdf: Path,
-    generated_at: datetime,
     rows: list[IpReportRow],
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -106,11 +87,6 @@ def write_report_pdf(
 
     story: list = []
 
-    logo_path = _report_logo_path()
-    if logo_path is not None:
-        story.append(_logo_image(logo_path, width=2.3 * cm))
-        story.append(Spacer(1, 0.18 * cm))
-
     story.append(
         Paragraph(
             "<b>Informe de direcciones IP</b>",
@@ -121,8 +97,7 @@ def write_report_pdf(
 
     story.append(
         Paragraph(
-            f"Archivo origen: <i>{html.escape(str(source_pdf), quote=False)}</i><br/>"
-            f"Generado (UTC): {generated_at.strftime('%Y-%m-%d %H:%M:%S')}<br/>"
+            f"Archivo origen: <i>{html.escape(source_pdf.name, quote=False)}</i><br/>"
             f"Total de direcciones: {len(rows)}",
             styles["Normal"],
         )

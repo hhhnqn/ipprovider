@@ -1,6 +1,5 @@
 """Pruebas de generación del informe PDF."""
 
-from datetime import datetime, timezone
 from pathlib import Path
 
 from pypdf import PdfReader
@@ -46,7 +45,6 @@ def test_report_creates_pdf_with_rows(tmp_path):
     write_report_pdf(
         output_path=out,
         source_pdf=src,
-        generated_at=datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
         rows=rows,
     )
 
@@ -66,7 +64,6 @@ def test_report_empty(tmp_path):
     write_report_pdf(
         output_path=out,
         source_pdf=Path("n/a.pdf"),
-        generated_at=datetime.now(timezone.utc),
         rows=[],
     )
     reader = PdfReader(str(out))
