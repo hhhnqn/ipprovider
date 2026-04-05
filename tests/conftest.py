@@ -31,3 +31,61 @@ def sample_rdap_response():
             },
         },
     }
+
+
+@pytest.fixture
+def lacnic_style_rdap_response():
+    """Registrant (empresa) + administrative (persona y segunda línea de dirección con «169»)."""
+    return {
+        "asn": 12345,
+        "asn_description": "EMPRESA-AS",
+        "network": {
+            "name": "EMPRESA-NET",
+            "cidr": "200.0.0.0/24",
+            "country": "AR",
+        },
+        "objects": {
+            "ORG-1": {
+                "handle": "ORG-1",
+                "roles": ["registrant"],
+                "contact": {
+                    "name": "Empresa S.A.",
+                    "kind": "org",
+                    "address": [
+                        {
+                            "type": None,
+                            "value": "Av. Corrientes 1000\nC1000 CABA",
+                        }
+                    ],
+                    "phone": [{"type": "voice", "value": "+54 11 0000-0000"}],
+                },
+            },
+            "PER-1": {
+                "handle": "PER-1",
+                "roles": ["administrative"],
+                "contact": {
+                    "name": "Luis Francisco Pérez Sánchez",
+                    "kind": "individual",
+                    "address": [
+                        {
+                            "type": None,
+                            "value": "Av. Independencia, 169, PB\n1099 - Buenos Aires - CF",
+                        }
+                    ],
+                    "phone": [{"type": "voice", "value": "+54 11 1111-1111"}],
+                    "email": [{"type": None, "value": "admin@example.test"}],
+                },
+            },
+            "TEA-1": {
+                "handle": "TEA-1",
+                "roles": ["abuse"],
+                "contact": {
+                    "name": "Abuse Desk",
+                    "kind": "individual",
+                    "address": [{"type": None, "value": "Av. Abuse 1\nCABA"}],
+                    "phone": [{"type": "voice", "value": "+54 11 9999-9999"}],
+                    "email": [{"type": None, "value": "abuse@example.test"}],
+                },
+            },
+        },
+    }

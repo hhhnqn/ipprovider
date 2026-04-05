@@ -2,13 +2,15 @@
 
 from pathlib import Path
 
-from reportlab.pdfgen import canvas
+import pytest
 
 from ipprovider.ip_find import find_ips_in_text
 from ipprovider.pdf_extract import extract_text_from_pdf
 
 
 def _write_pdf_with_lines(path: Path, lines: list[str]) -> None:
+    from reportlab.pdfgen import canvas
+
     c = canvas.Canvas(str(path))
     y = 800
     for line in lines:
@@ -18,6 +20,7 @@ def _write_pdf_with_lines(path: Path, lines: list[str]) -> None:
 
 
 def test_extract_and_find_ips(tmp_path):
+    pytest.importorskip("reportlab", reason="pip install -e '.[dev]' para generar PDFs de prueba")
     pdf = tmp_path / "sample.pdf"
     _write_pdf_with_lines(
         pdf,

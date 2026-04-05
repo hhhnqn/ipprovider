@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 import ipaddress
+import sys
 from dataclasses import dataclass
 from typing import Any
 
 from ipwhois import IPWhois
 from ipwhois.exceptions import BaseIpwhoisException
+
+
+@dataclass(frozen=True)
+class RdapEntityContact:
+    """Contacto RDAP por rol: titular, admin/técnico o abuso."""
+
+    title: str
+    handle: str
+    name: str
+    address: str
+    phone: str
+    email: str
 
 
 @dataclass
@@ -21,10 +34,7 @@ class IpReportRow:
     asn: str
     organization: str
     network_cidr: str
-    responsible: str = "—"
-    postal_address: str = "—"
-    country: str = "—"
-    phone: str = "—"
+    contacts: tuple[RdapEntityContact, ...] = ()
     error: str | None = None
 
 
@@ -60,6 +70,7 @@ def _roles_priority(roles: Any) -> int:
 
 
 def _format_contact_addresses(addr: Any) -> str:
+    """Concatena entradas de dirección de un contacto; preserva saltos de línea en cada valor."""
     if not addr:
         return ""
     parts: list[str] = []
@@ -68,12 +79,12 @@ def _format_contact_addresses(addr: Any) -> str:
             if isinstance(block, dict):
                 v = (block.get("value") or "").strip()
                 if v:
-                    parts.append(v.replace("\n", ", "))
+                    parts.append(v)
             elif isinstance(block, str) and block.strip():
                 parts.append(block.strip())
     elif isinstance(addr, str) and addr.strip():
         parts.append(addr.strip())
-    return " | ".join(parts) if parts else ""
+    return "\n".join(parts) if parts else ""
 
 
 def _format_contact_phones(phone: Any) -> str:
@@ -95,6 +106,24 @@ def _format_contact_phones(phone: Any) -> str:
     return ""
 
 
+def _format_contact_emails(email: Any) -> str:
+    if not email:
+        return ""
+    if isinstance(email, str) and email.strip():
+        return email.strip()
+    if isinstance(email, list):
+        out: list[str] = []
+        for e in email:
+            if isinstance(e, dict):
+                val = (e.get("value") or "").strip()
+                if val:
+                    out.append(val)
+            elif isinstance(e, str) and e.strip():
+                out.append(e.strip())
+        return "; ".join(out)
+    return ""
+
+
 def _sorted_rdap_objects(rdap: dict[str, Any]) -> list[dict[str, Any]]:
     objs = rdap.get("objects") or {}
     if not isinstance(objs, dict):
@@ -107,69 +136,67 @@ def _sorted_rdap_objects(rdap: dict[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
-def _pick_contact_details(rdap: dict[str, Any]) -> tuple[str, str, str, str]:
-    """responsible, postal_address, country, phone desde objects.contact y network."""
-    network_obj = rdap.get("network") or {}
-    country = ""
-    if isinstance(network_obj, dict):
-        c = network_obj.get("country")
-        if c is not None and str(c).strip():
-            country = str(c).strip()
+def _contact_from_object(o: dict[str, Any], title: str) -> RdapEntityContact:
+    contact = o.get("contact") or {}
+    if not isinstance(contact, dict):
+        contact = {}
+    handle = str(o.get("handle") or "").strip()
+    name = (contact.get("name") or "").strip()
+    addr = _format_contact_addresses(contact.get("address"))
+    ph = _format_contact_phones(contact.get("phone"))
+    em = _format_contact_emails(contact.get("email"))
+    return RdapEntityContact(
+        title=title,
+        handle=handle,
+        name=name,
+        address=addr,
+        phone=ph,
+        email=em,
+    )
 
+
+def _extract_entity_contacts(rdap: dict[str, Any]) -> tuple[RdapEntityContact, ...]:
+    """
+    Titular (registrant), contacto admin/técnico, contacto de abuso.
+    No repite el mismo handle en más de un bloque.
+    """
     objects_list = _sorted_rdap_objects(rdap)
-    responsible = ""
-    postal_address = ""
-    phone = ""
+    seen_handles: set[str] = set()
+    out: list[RdapEntityContact] = []
+
+    def try_append(title: str, o: dict[str, Any]) -> None:
+        h = str(o.get("handle") or "").strip()
+        if h and h in seen_handles:
+            return
+        if h:
+            seen_handles.add(h)
+        block = _contact_from_object(o, title)
+        if not any((block.name, block.address, block.phone, block.email)):
+            return
+        out.append(block)
 
     for o in objects_list:
-        contact = o.get("contact") or {}
-        if not isinstance(contact, dict):
-            continue
-        name = (contact.get("name") or "").strip()
-        addr = _format_contact_addresses(contact.get("address"))
-        ph = _format_contact_phones(contact.get("phone"))
-        if not responsible and name:
-            responsible = name
-        if not postal_address and addr:
-            postal_address = addr
-        if not phone and ph:
-            phone = ph
-        if responsible and postal_address and phone:
+        roles = set(o.get("roles") or [])
+        if "registrant" in roles:
+            try_append("Titular del recurso", o)
             break
 
-    if not responsible or not postal_address:
-        for o in objects_list:
-            contact = o.get("contact") or {}
-            if not isinstance(contact, dict):
-                continue
-            name = (contact.get("name") or "").strip()
-            addr = _format_contact_addresses(contact.get("address"))
-            if not responsible and name:
-                responsible = name
-            if not postal_address and addr:
-                postal_address = addr
-            if responsible and postal_address:
-                break
+    for o in objects_list:
+        roles = set(o.get("roles") or [])
+        if roles & {"administrative", "technical"}:
+            try_append("Contacto administrativo / técnico", o)
+            break
 
-    if not phone:
-        for o in objects_list:
-            contact = o.get("contact") or {}
-            if not isinstance(contact, dict):
-                continue
-            ph = _format_contact_phones(contact.get("phone"))
-            if ph:
-                phone = ph
-                break
+    for o in objects_list:
+        roles = set(o.get("roles") or [])
+        if "abuse" in roles:
+            try_append("Contacto de abuso", o)
+            break
 
-    if not country and postal_address:
-        tail = postal_address.split(",")[-1].strip()
-        if len(tail) <= 64 and tail.replace(" ", "").isalpha():
-            country = tail
-
-    return responsible, postal_address, country, phone
+    return tuple(out)
 
 
-def _rdap_to_row(address: str, rdap: dict[str, Any]) -> tuple[str, str, str, str, str, str, str]:
+def _rdap_to_row(address: str, rdap: dict[str, Any]) -> tuple[str, str, str, tuple[RdapEntityContact, ...]]:
     asn_raw = rdap.get("asn") or rdap.get("asn_number")
     asn = str(asn_raw).strip() if asn_raw not in (None, "", "NA") else ""
 
@@ -194,19 +221,13 @@ def _rdap_to_row(address: str, rdap: dict[str, Any]) -> tuple[str, str, str, str
                 if org:
                     break
 
-    responsible, postal_address, country, phone = _pick_contact_details(rdap)
-
-    def dash(s: str) -> str:
-        return s if s else "—"
+    contacts = _extract_entity_contacts(rdap)
 
     return (
         asn or "—",
         org or "—",
         cidr or "—",
-        dash(responsible),
-        dash(postal_address),
-        dash(country),
-        dash(phone),
+        contacts,
     )
 
 
@@ -235,16 +256,13 @@ def enrich_ip(
             asn="—",
             organization="—",
             network_cidr="—",
-            responsible="—",
-            postal_address="—",
-            country="—",
-            phone="—",
+            contacts=(),
             error=None,
         )
 
     try:
         rdap = lookup_fn(address)
-        asn, org, cidr, responsible, postal_address, country, phone = _rdap_to_row(address, rdap)
+        asn, org, cidr, contacts = _rdap_to_row(address, rdap)
         return IpReportRow(
             address=address,
             ip_version=ver,
@@ -253,10 +271,7 @@ def enrich_ip(
             asn=asn,
             organization=org,
             network_cidr=cidr,
-            responsible=responsible,
-            postal_address=postal_address,
-            country=country,
-            phone=phone,
+            contacts=contacts,
             error=None,
         )
     except (BaseIpwhoisException, OSError, ValueError) as e:
@@ -268,10 +283,7 @@ def enrich_ip(
             asn="—",
             organization="—",
             network_cidr="—",
-            responsible="—",
-            postal_address="—",
-            country="—",
-            phone="—",
+            contacts=(),
             error=str(e) or type(e).__name__,
         )
 
@@ -280,5 +292,43 @@ def enrich_ips(
     addresses: list[str],
     *,
     lookup_fn=lookup_rdap,
+    progress: bool = False,
 ) -> list[IpReportRow]:
-    return [enrich_ip(a, lookup_fn=lookup_fn) for a in addresses]
+    """
+    Si progress=True, escribe avance en stderr durante consultas RDAP (IPs públicas).
+    Con muchas IPs públicas solo muestra una muestra periódica para no saturar la consola.
+    """
+    pub_total = sum(
+        1
+        for a in addresses
+        if _classify_scope(ipaddress.ip_address(a))[1]
+    )
+    if progress and pub_total > 0:
+        print(
+            f"Consultando RDAP: {pub_total} dirección(es) pública(s)...",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    out: list[IpReportRow] = []
+    pub_done = 0
+    # Con muchas IPs públicas, muestrear cada 10 consultas (y la 1.ª y la última).
+    sample_every = 10 if pub_total > 50 else 1
+
+    for a in addresses:
+        ip = ipaddress.ip_address(a)
+        _, is_pub = _classify_scope(ip)
+        if is_pub and progress and pub_total > 0:
+            pub_done += 1
+            if (
+                pub_total <= 50
+                or pub_done in (1, pub_total)
+                or pub_done % sample_every == 0
+            ):
+                print(
+                    f"  RDAP {pub_done}/{pub_total}: {a} ...",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        out.append(enrich_ip(a, lookup_fn=lookup_fn))
+    return out

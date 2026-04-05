@@ -5,22 +5,25 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ipprovider"
 version = "0.1.0"
-description = "Extrae direcciones IP de PDFs y genera un informe con datos RDAP"
+description = "Extract IPv4/IPv6 from PDF, Excel, or Word and build an HTML RDAP report"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "pypdf>=4.0",
     "ipwhois>=1.2.0",
-    "reportlab>=4.0",
+    "openpyxl>=3.1",
+    "python-docx>=1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "reportlab>=4.0",
 ]
 
 [project.scripts]
 ipprovider = "ipprovider.cli:main"
+ipprovider-rdap-json = "ipprovider.rdap_dump:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
