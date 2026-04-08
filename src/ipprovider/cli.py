@@ -60,6 +60,24 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="No mostrar avance (lectura Excel, RDAP, listado de IPs ni resumen)",
     )
+    p.add_argument(
+        "--ocr",
+        action="store_true",
+        help=(
+            "Incluir texto obtenido por OCR sobre imágenes incrustadas (PDF, xlsx, docx). "
+            'Requiere: pip install -e ".[ocr]", Tesseract en el PATH y, para PDF, Poppler.'
+        ),
+    )
+    p.add_argument(
+        "--ocr-lang",
+        type=str,
+        default=None,
+        metavar="LANG",
+        help=(
+            "Idiomas Tesseract (p. ej. spa+eng). Por defecto spa+eng. "
+            "Solo tiene efecto con --ocr."
+        ),
+    )
     return p
 
 
@@ -71,7 +89,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        text = extract_text(doc_path, progress=not args.quiet)
+        text = extract_text(
+            doc_path,
+            progress=not args.quiet,
+            ocr=args.ocr,
+            ocr_lang=args.ocr_lang,
+        )
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1

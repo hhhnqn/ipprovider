@@ -20,6 +20,11 @@ dev = [
     "pytest>=7.0",
     "reportlab>=4.0",
 ]
+ocr = [
+    "Pillow>=10.0",
+    "pytesseract>=0.3.10",
+    "pdf2image>=1.17.0",
+]
 
 [project.scripts]
 ipprovider = "ipprovider.cli:main"

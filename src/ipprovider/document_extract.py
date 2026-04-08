@@ -12,20 +12,71 @@ SUPPORTED_EXTENSIONS = frozenset({".pdf", ".xlsx", ".docx"})
 # Cada cuántas filas mostrar avance en stderr (libros muy grandes).
 _XLSX_ROW_PROGRESS_STEP = 5_000
 
+_OCR_SEPARATOR = "\n\n--- Texto OCR (imágenes incrustadas) ---\n\n"
 
-def extract_text(path: Path, *, progress: bool = False) -> str:
+
+def extract_text(
+    path: Path,
+    *,
+    progress: bool = False,
+    ocr: bool = False,
+    ocr_lang: str | None = None,
+) -> str:
     """
     Extrae texto plano según la extensión del archivo.
 
     Soporta: .pdf, .xlsx, .docx
+
+    Si ``ocr`` es True, concatena el texto reconocido por OCR en imágenes
+    incrustadas (requiere ``pip install -e ".[ocr]"`` y Tesseract; PDF
+    además Poppler).
     """
+    from ipprovider.ocr_images import DEFAULT_OCR_LANG
+
+    lang = ocr_lang if ocr_lang is not None else DEFAULT_OCR_LANG
     suffix = path.suffix.lower()
     if suffix == ".pdf":
-        return extract_text_from_pdf(path)
+        base = extract_text_from_pdf(path)
+        if ocr:
+            from ipprovider.ocr_images import ocr_pdf_pages
+
+            if progress:
+                print("OCR en páginas PDF (puede tardar)...", file=sys.stderr, flush=True)
+            extra = ocr_pdf_pages(path, lang=lang, progress=progress)
+            return _merge_ocr(base, extra)
+        return base
     if suffix == ".xlsx":
-        return _extract_xlsx(path, progress=progress)
+        base = _extract_xlsx(path, progress=progress)
+        if ocr:
+            from ipprovider.ocr_images import ocr_ooxml_embedded_images
+
+            if progress:
+                print("OCR en imágenes incrustadas del Excel...", file=sys.stderr, flush=True)
+            extra = ocr_ooxml_embedded_images(
+                path,
+                media_prefix="xl/media/",
+                label="Excel",
+                lang=lang,
+                progress=progress,
+            )
+            return _merge_ocr(base, extra)
+        return base
     if suffix == ".docx":
-        return _extract_docx(path)
+        base = _extract_docx(path)
+        if ocr:
+            from ipprovider.ocr_images import ocr_ooxml_embedded_images
+
+            if progress:
+                print("OCR en imágenes incrustadas del Word...", file=sys.stderr, flush=True)
+            extra = ocr_ooxml_embedded_images(
+                path,
+                media_prefix="word/media/",
+                label="Word",
+                lang=lang,
+                progress=progress,
+            )
+            return _merge_ocr(base, extra)
+        return base
     if suffix == ".xls":
         msg = (
             "El formato .xls (Excel 97-2003) no está soportado. "
@@ -42,6 +93,16 @@ def extract_text(path: Path, *, progress: bool = False) -> str:
         f"Extensión no soportada: {suffix or '(sin extensión)'}. "
         f"Use: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
     )
+
+
+def _merge_ocr(base: str, ocr_text: str) -> str:
+    ocr_text = (ocr_text or "").strip()
+    if not ocr_text:
+        return base
+    base = base or ""
+    if base.strip():
+        return base.rstrip() + _OCR_SEPARATOR + ocr_text
+    return ocr_text
 
 
 def _cell_to_str(value: object) -> str:
